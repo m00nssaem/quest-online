@@ -183,7 +183,7 @@
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app"><div id="gameArea"></div><div id="chatArea"></div></div>
 
 <script>
 /* =========================================================
@@ -206,6 +206,7 @@ if(typeof firebase === 'undefined' || window.__fbLoadFailed){
     </div>`;
   throw new Error('Firebase SDK load failed — see diagnostic screen');
 }
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyAERwA20cNN8IFx1lKbINYfpJQxTWgX0yc",
@@ -241,41 +242,58 @@ function esc(s){
   return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* ---------- 게임 데이터 ---------- */
+/* =========================================================
+   게임 데이터 — 퀘스트 (감독판 / Director's Cut)
+   ========================================================= */
 const ROLE_INFO = {
-  merlin:   {name:'멀린',              align:'good', desc:'악의 정체를 모두 알고 있습니다. (단, 모드레드는 보이지 않습니다) 하지만 정체를 들키면 어쌔신에게 암살당할 수 있으니 침착하게 힌트만 주세요.'},
-  percival: {name:'퍼시발',            align:'good', desc:'멀린과 모르가나, 두 사람을 알고 있습니다. 하지만 누가 진짜 멀린인지는 알 수 없습니다. 대화를 통해 진짜 멀린을 지켜내세요.'},
-  loyal:    {name:'충성스러운 기사',    align:'good', desc:'특별한 정보는 없지만, 원정 결과와 대화를 통해 진실을 추리해야 합니다.'},
-  morgana:  {name:'모르가나',          align:'evil', desc:'퍼시발에게 멀린으로 보입니다. 멀린인 척 연기해서 어쌔신의 암살을 도우세요.'},
-  mordred:  {name:'모드레드',          align:'evil', desc:'멀린에게 정체가 보이지 않는 숨은 악입니다. 다른 악의 동료들은 모두 알아볼 수 있습니다.'},
-  oberon:   {name:'오베론',            align:'evil', desc:'다른 악의 동료를 알지 못하고, 동료들에게도 당신이 보이지 않습니다. 홀로 싸워야 합니다.'},
-  assassin: {name:'어쌔신',            align:'evil', desc:'선이 3번 성공하면 최후의 기회! 멀린을 정확히 지목하면 악이 역전승합니다.'},
-  minion:   {name:'미니언',            align:'evil', desc:'악의 동료들을 모두 알아볼 수 있습니다. 원정을 방해하고 실패시키세요.'}
+  servant:      {name:'충성스러운 신하', align:'good', desc:'특별한 능력이 없습니다. 대화와 원정 결과로 진실을 추리하세요.'},
+  cleric:       {name:'성직자',          align:'good', desc:'첫 번째 원정대장의 소속(선/악)을 알고 있습니다.'},
+  youth:        {name:'젊은 기사',        align:'good', desc:'마법 토큰을 받으면 반드시 실패 카드를 내야 합니다.'},
+  troublemaker: {name:'말썽꾼',          align:'good', desc:'부적으로 조사당하면 반드시 자신을 악으로 밝혀야 합니다.'},
+  duke:         {name:'공작',            align:'good', desc:'선의 마지막 기회에서, 한 사람의 지목을 무효화할 수 있습니다.'},
+  archduke:     {name:'대공',            align:'good', desc:'선의 마지막 기회에서, 한 사람의 지목 대상을 다른 사람으로 바꿀 수 있습니다.'},
+  minion:       {name:'모드레드의 하수인', align:'evil', desc:'특별한 능력이 없습니다. 다른 악의 동료들을 알아볼 수 있습니다.'},
+  morgan:       {name:'모르간 르 페이',    align:'evil', desc:'마법 토큰에 면역이라, 성공/실패를 자유롭게 낼 수 있습니다.'},
+  hunter:       {name:'눈먼 사냥꾼',      align:'evil', desc:'선의 마지막 기회 대신 "사냥"을 선택해, 선 역할 2명의 정체를 정확히 맞히면 악이 승리합니다.'}
 };
+const GOOD_ROLE_KEYS = ['servant','cleric','youth','troublemaker','duke','archduke'];
 
-const MISSION_TABLE = {
-  5:{sizes:[2,3,2,3,3], fails:[1,1,1,1,1]},
-  6:{sizes:[2,3,4,3,4], fails:[1,1,1,1,1]},
-  7:{sizes:[2,3,3,4,4], fails:[1,1,1,2,1]},
-  8:{sizes:[3,4,4,5,5], fails:[1,1,1,2,1]},
-  9:{sizes:[3,4,4,5,5], fails:[1,1,1,2,1]},
-  10:{sizes:[3,4,4,5,5],fails:[1,1,1,2,1]}
-};
-const GOOD_EVIL_COUNT = {5:[3,2],6:[4,2],7:[4,3],8:[5,3],9:[6,3],10:[6,4]};
+function missionFor(n){
+  if(n<=7) return {sizes:[3,2,3,4,3], fails:[1,1,1,2,1]};
+  return {sizes:[4,3,4,5,4], fails:[1,1,2,2,1]};
+}
+function amuletCheckpointsFor(n){
+  if(n===5) return [];
+  if(n===6) return [4];
+  if(n===7) return [3,4];
+  return [2,3,4]; // 8,9,10
+}
+function minionCountFor(n){
+  return {5:1,6:1,7:2,8:2,9:3,10:3}[n];
+}
 
-function buildRoleSet(n){
-  const [goodN, evilN] = GOOD_EVIL_COUNT[n];
-  let evil = ['assassin'];
-  if(evilN>=2) evil.push('morgana');
-  if(evilN>=3) evil.push('mordred');
-  if(evilN>=4) evil.push('oberon');
-  while(evil.length<evilN) evil.push('minion');
-
-  let good = ['merlin'];
-  if(goodN>=2) good.push('percival');
-  while(good.length<goodN) good.push('loyal');
-
-  return shuffle([...good, ...evil]);
+/* secondChoice: 'youth' 또는 'troublemaker' (6인 이상부터 선택 가능) */
+function buildRoleSet(n, secondChoice){
+  let goodPool = [];
+  let reserve = null;
+  if(n===5){
+    let pool = shuffle(['cleric','youth','servant']);
+    reserve = pool.pop();
+    goodPool = pool; // 2장만 배분
+  } else if(n===6 || n===7){
+    goodPool = ['cleric', secondChoice, 'duke'];
+  } else if(n===8){
+    goodPool = ['cleric', secondChoice, 'duke', 'servant'];
+  } else if(n===9){
+    goodPool = ['cleric', secondChoice, 'archduke', 'servant'];
+  } else if(n===10){
+    goodPool = ['cleric', secondChoice, 'duke', 'archduke', 'servant'];
+  }
+  let evilPool = ['morgan','hunter'];
+  const mCount = minionCountFor(n);
+  for(let i=0;i<mCount;i++) evilPool.push('minion');
+  const roles = shuffle([...goodPool, ...evilPool]);
+  return {roles, reserve};
 }
 
 /* ---------- 로컬 상태 ---------- */
@@ -284,11 +302,14 @@ let myName = null;
 let myRoom = null;
 let roomRef = null;
 let roomListener = null;
-let localVoteChoice = null;
-let localQuestCard = null;
-let hunterPicks = [];
-let assassinPick = null;
 let teamPickLocal = [];
+let magicPickLocal = null;
+let handoverLeaderPick = null;
+let handoverAmuletPick = null;
+let amuletTargetPick = null;
+let glcPickLocal = [];
+let huntPickLocal = [null, null];
+let huntRolePickLocal = [null, null];
 
 /* ---------- 화면 진입점 ---------- */
 function boot(){
@@ -308,7 +329,7 @@ function createRoom(name){
     createdAt: Date.now(),
     hostId: myId,
     phase: 'lobby',
-    settings: { useHunter:false },
+    settings: { secondGoodChoice:'youth' },
     players: {
       [myId]: { name: myName, joinedAt: Date.now(), connected:true }
     }
@@ -361,10 +382,12 @@ function attachRoom(code){
     if(!data){ leaveToStart(); return; }
     render(data);
   });
+  initChat();
 }
 
 function leaveToStart(){
   if(roomListener && roomRef) roomRef.off('value', roomListener);
+  teardownChat();
   myRoom=null; roomRef=null; roomListener=null;
   localStorage.removeItem('quest_room');
   render();
@@ -375,6 +398,62 @@ function exitRoom(){
     db.ref(`rooms/${myRoom}/players/${myId}/connected`).set(false);
   }
   leaveToStart();
+}
+
+/* ================= 채팅 ================= */
+let chatListener = null;
+function initChat(){
+  const chatArea = document.getElementById('chatArea');
+  if(!chatArea) return;
+  chatArea.innerHTML = `
+    <div class="panel" id="chatPanel">
+      <h2 style="cursor:pointer;" id="chatHeader">채팅 <span class="tag" id="chatToggleTag">▾ 접기</span></h2>
+      <div id="chatMessages" style="max-height:160px; overflow-y:auto; font-size:12px; margin-bottom:8px; border:1px dashed var(--gold-dim); padding:6px; background:#fff8e788;">
+        <div class="small">아직 메시지가 없습니다.</div>
+      </div>
+      <div class="row" id="chatInputRow">
+        <input type="text" id="chatInput" placeholder="메시지 입력 후 Enter" maxlength="200">
+        <button id="chatSendBtn" style="flex:0 0 auto;">전송</button>
+      </div>
+    </div>`;
+  document.getElementById('chatSendBtn').onclick = sendChat;
+  document.getElementById('chatInput').addEventListener('keydown', e=>{
+    if(e.key==='Enter') sendChat();
+  });
+  document.getElementById('chatHeader').onclick = ()=>{
+    const msgBox = document.getElementById('chatMessages');
+    const inputRow = document.getElementById('chatInputRow');
+    const collapsed = msgBox.style.display==='none';
+    msgBox.style.display = collapsed ? 'block':'none';
+    inputRow.style.display = collapsed ? 'flex':'none';
+    document.getElementById('chatToggleTag').textContent = collapsed ? '▾ 접기' : '▸ 펼치기';
+  };
+  const chatRef = db.ref(`rooms/${myRoom}/chat`).limitToLast(100);
+  chatListener = chatRef.on('value', snap=>{
+    const box = document.getElementById('chatMessages');
+    if(!box) return;
+    const msgs = snap.val() || {};
+    const list = Object.values(msgs).sort((a,b)=>a.ts-b.ts);
+    const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+    box.innerHTML = list.length ? list.map(m=>`<div style="margin-bottom:4px;"><b>${esc(m.name)}:</b> ${esc(m.text)}</div>`).join('') : '<div class="small">아직 메시지가 없습니다.</div>';
+    if(wasAtBottom) box.scrollTop = box.scrollHeight;
+  });
+}
+function sendChat(){
+  const input = document.getElementById('chatInput');
+  if(!input) return;
+  const text = input.value.trim().slice(0,200);
+  if(!text) return;
+  db.ref(`rooms/${myRoom}/chat`).push({name:myName, text, ts:Date.now()});
+  input.value = '';
+}
+function teardownChat(){
+  if(chatListener && myRoom){
+    db.ref(`rooms/${myRoom}/chat`).off('value', chatListener);
+  }
+  chatListener = null;
+  const chatArea = document.getElementById('chatArea');
+  if(chatArea) chatArea.innerHTML = '';
 }
 
 /* 새로고침 시 자동 재접속 시도 */
@@ -395,191 +474,374 @@ function tryAutoRejoin(){
 }
 
 /* ================= 게임 시작(호스트) ================= */
+function toggleSecondGood(choice){
+  db.ref(`rooms/${myRoom}/settings/secondGoodChoice`).set(choice);
+}
+
 function startGame(data){
   const ids = Object.keys(data.players);
   const n = ids.length;
   if(n<5 || n>10){ alert('5~10명이 모여야 시작할 수 있어요. (현재 '+n+'명)'); return; }
 
   const order = shuffle(ids);
-  const roles = buildRoleSet(n);
-  const mission = MISSION_TABLE[n];
+  const secondChoice = (data.settings && data.settings.secondGoodChoice) || 'youth';
+  const {roles, reserve} = buildRoleSet(n, secondChoice);
+  const mission = missionFor(n);
 
   const updateObj = {
     phase:'reveal',
     order: order,
-    leaderIndex: 0,
+    firstLeaderId: order[0],
+    currentLeaderId: order[0],
+    leadersUsed: [],
     quest: 1,
     track: [null,null,null,null,null],
-    rejects: 0,
     team: null,
-    votes: null,
+    magicTarget: null,
     questCards: null,
-    assassin: null,
-    winner: null,
-    winReason: null,
+    amuletHolders: [],
+    fadedHolders: [],
+    pendingAmuletRecipient: null,
+    reserveRole: reserve || null,
     missionSizes: mission.sizes,
     missionFails: mission.fails,
-    lastVote: null,
+    amuletCheckpoints: amuletCheckpointsFor(n),
+    lastCompletedQuest: null,
     lastQuestFails: null,
-    locks: null
+    glc: null,
+    huntPicks: null,
+    winner: null,
+    winReason: null
   };
   order.forEach((pid,i)=>{
     updateObj['players/'+pid+'/role'] = roles[i];
     updateObj['players/'+pid+'/align'] = ROLE_INFO[roles[i]].align;
     updateObj['players/'+pid+'/ready'] = false;
+    updateObj['players/'+pid+'/lastInvestigation'] = null;
   });
   db.ref('rooms/'+myRoom).update(updateObj);
 }
 
 function markReady(){
-  db.ref(`rooms/${myRoom}/players/${myId}/ready`).set(true).then(()=>{
-    tryResolve('allReady', ()=>{
-      db.ref(`rooms/${myRoom}/players`).once('value').then(snap=>{
-        const players = snap.val();
-        const allReady = Object.values(players).every(p=>p.ready);
-        if(allReady){
-          db.ref('rooms/'+myRoom).update({phase:'team'});
-        } else {
-          db.ref(`rooms/${myRoom}/locks/allReady`).set(null);
-        }
-      });
+  db.ref(`rooms/${myRoom}/players/${myId}/ready`).set(true);
+}
+
+/* ---------- 자동 진행 체크 ---------- */
+function autoResolveChecks(data){
+  if(!data || !myRoom) return;
+  const rr = db.ref('rooms/'+myRoom);
+
+  if(data.phase === 'reveal' && data.players){
+    const allReady = Object.values(data.players).every(p=>p.ready);
+    if(!allReady) return;
+    rr.transaction(room=>{
+      if(!room || room.phase!=='reveal') return;
+      if(!room.players || !Object.values(room.players).every(p=>p.ready)) return;
+      room.phase = 'team';
+      return room;
+    });
+  } else if(data.phase === 'quest' && data.team){
+    const team = data.team;
+    const cards = data.questCards || {};
+    if(team.length===0 || Object.keys(cards).length < team.length) return;
+    rr.transaction(room=>{
+      if(!room || room.phase!=='quest') return;
+      const rteam = room.team||[];
+      const rcards = room.questCards||{};
+      if(Object.keys(rcards).length < rteam.length) return;
+      const fails = rteam.filter(id=>rcards[id]==='fail').length;
+      const needFails = room.missionFails[room.quest-1];
+      const result = fails >= needFails ? 'fail' : 'success';
+      const newTrack = room.track.slice();
+      newTrack[room.quest-1] = result;
+      const successCount = newTrack.filter(t=>t==='success').length;
+      const failCount = newTrack.filter(t=>t==='fail').length;
+      room.track = newTrack;
+      room.lastQuestFails = fails;
+      room.lastCompletedQuest = room.quest;
+      if(successCount >= 3){
+        room.phase='end'; room.winner='good';
+        room.winReason='선이 세 번째 원정에 성공했습니다!';
+      } else if(failCount >= 3){
+        room.phase='goodslastchance';
+        room.glc = {hunterDecision:null, pointing:null};
+      } else {
+        room.phase='handover';
+        room.quest = room.quest+1;
+        room.team=null; room.magicTarget=null; room.questCards=null;
+      }
+      return room;
+    });
+  } else if(data.phase === 'goodslastchance' && data.glc && data.glc.hunterDecision==='skip'){
+    const total = data.order.length;
+    const pointing = data.glc.pointing || {};
+    if(Object.keys(pointing).length < total) return;
+    rr.transaction(room=>{
+      if(!room || room.phase!=='goodslastchance' || !room.glc || room.glc.hunterDecision!=='skip') return;
+      const p = room.glc.pointing||{};
+      if(Object.keys(p).length < room.order.length) return;
+      const wrongs = wrongPicksList(room, p);
+      if(wrongs.length===0){
+        // 잘못된 지목이 없으면 공작/대공이 있어도 개입할 대상이 없으므로 바로 판정
+        const outcome = computeGLCOutcome(room);
+        room.phase='end'; room.winner=outcome.winner; room.winReason=outcome.winReason;
+        return room;
+      }
+      const dukeId = room.order.find(id=>room.players[id].role==='duke') || null;
+      const archdukeId = room.order.find(id=>room.players[id].role==='archduke') || null;
+      if(dukeId || archdukeId){
+        room.phase = 'glcresolve';
+        room.glc.resolveStage = dukeId ? 'duke' : 'archduke';
+        room.glc.dukeId = dukeId;
+        room.glc.archdukeId = archdukeId;
+      } else {
+        const outcome = computeGLCOutcome(room);
+        room.phase='end'; room.winner=outcome.winner; room.winReason=outcome.winReason;
+      }
+      return room;
+    });
+  }
+}
+
+/* ---------- 공작 / 대공: 지목 결과 보정 ---------- */
+function wrongPicksList(room, pointingOverride){
+  const pointing = pointingOverride || (room.glc && room.glc.pointing) || {};
+  const goodIds = room.order.filter(id=>room.players[id].align==='good');
+  const evilSet = new Set(room.order.filter(id=>room.players[id].align==='evil'));
+  const list = [];
+  goodIds.forEach(pid=>{
+    (pointing[pid]||[]).forEach(tid=>{
+      if(!evilSet.has(tid)) list.push({pointerId:pid, targetId:tid});
     });
   });
+  return list;
 }
-
-/* ---------- 락 기반 단일 실행 보장 ---------- */
-function tryResolve(lockName, fn){
-  const lockRef = db.ref(`rooms/${myRoom}/locks/${lockName}`);
-  lockRef.transaction(cur=>{
-    if(cur) return; // 이미 락 걸림 -> 중단
-    return true;
-  }, (err, committed)=>{
-    if(committed) fn();
+function pointingAfterDuke(room){
+  const orig = (room.glc && room.glc.pointing) || {};
+  const dukeR = room.glc && room.glc.dukeRemoval;
+  const result = {};
+  Object.keys(orig).forEach(pid=>{
+    let list = orig[pid].slice();
+    if(dukeR && typeof dukeR==='object' && dukeR.pointerId===pid){
+      list = list.filter(t=>t!==dukeR.targetId);
+    }
+    result[pid] = list;
+  });
+  return result;
+}
+function effectivePointing(room){
+  const afterDuke = pointingAfterDuke(room);
+  const archR = room.glc && room.glc.archdukeRedirect;
+  const result = {};
+  Object.keys(afterDuke).forEach(pid=>{
+    let list = afterDuke[pid].slice();
+    if(archR && typeof archR==='object' && archR.pointerId===pid){
+      list = list.map(t=> t===archR.targetId ? archR.newTargetId : t);
+    }
+    result[pid] = list;
+  });
+  return result;
+}
+function computeGLCOutcome(room){
+  const pointing = effectivePointing(room);
+  const goodIds = room.order.filter(id=>room.players[id].align==='good');
+  const evilIds = room.order.filter(id=>room.players[id].align==='evil');
+  const goodPicks = goodIds.flatMap(id=> pointing[id]||[]);
+  const onlyEvilPointed = goodPicks.length>0 && goodPicks.every(id=>evilIds.includes(id));
+  const allEvilCovered = evilIds.every(id=>goodPicks.includes(id));
+  const pointingWin = onlyEvilPointed && allEvilCovered;
+  const leadersAll = [...(room.leadersUsed||[]), room.currentLeaderId];
+  const veteranWin = leadersAll.length>0 && leadersAll.every(id=>room.players[id].align==='evil');
+  if(pointingWin || veteranWin){
+    return {winner:'good', winReason: veteranWin ? '지금까지의 원정대장이 모두 악이었습니다.' : '선이 악의 정체를 정확히 지목했습니다.'};
+  }
+  return {winner:'evil', winReason:'선이 마지막 기회에서 악을 가려내지 못했습니다.'};
+}
+function submitDukeChoice(data, choice){
+  // choice: {pointerId, targetId} 또는 'skip'
+  const glc = data.glc||{};
+  const nextRoom = {...data, glc:{...glc, dukeRemoval:choice}};
+  const remaining = wrongPicksList(nextRoom, pointingAfterDuke(nextRoom));
+  const updates = { ['glc/dukeRemoval']: choice };
+  if(glc.archdukeId && remaining.length>0){
+    updates['glc/resolveStage'] = 'archduke';
+  } else {
+    const outcome = computeGLCOutcome(nextRoom);
+    updates.phase = 'end';
+    updates.winner = outcome.winner;
+    updates.winReason = outcome.winReason;
+  }
+  db.ref('rooms/'+myRoom).update(updates);
+}
+function submitArchdukeChoice(data, choice){
+  // choice: {pointerId, targetId, newTargetId} 또는 'skip'
+  const glc = data.glc||{};
+  const nextRoom = {...data, glc:{...glc, archdukeRedirect:choice}};
+  const outcome = computeGLCOutcome(nextRoom);
+  db.ref('rooms/'+myRoom).update({
+    ['glc/archdukeRedirect']: choice,
+    phase: 'end',
+    winner: outcome.winner,
+    winReason: outcome.winReason
   });
 }
 
-/* ================= 원정대 지명 ================= */
+/* ---------- 호스트: 응답 없는 인원을 무시하고 강제 진행 ---------- */
+function forceAdvance(data){
+  if(!confirm('아직 응답하지 않은 인원이 있을 수 있습니다. 무시하고 강제로 다음 단계로 진행할까요?')) return;
+  const rr = db.ref('rooms/'+myRoom);
+  if(data.phase==='reveal'){
+    const updates = {};
+    Object.keys(data.players).forEach(id=>{ updates['players/'+id+'/ready'] = true; });
+    rr.update(updates);
+  } else if(data.phase==='quest'){
+    const updates = {};
+    data.team.forEach(id=>{ if(!data.questCards || !data.questCards[id]) updates['questCards/'+id] = 'success'; });
+    if(Object.keys(updates).length) rr.update(updates);
+  } else if(data.phase==='goodslastchance' && data.glc && data.glc.hunterDecision==='skip'){
+    const updates = {};
+    data.order.forEach(id=>{
+      if(!data.glc.pointing || !data.glc.pointing[id]){
+        const others = data.order.filter(x=>x!==id).slice(0,2);
+        updates['glc/pointing/'+id] = others;
+      }
+    });
+    if(Object.keys(updates).length) rr.update(updates);
+  } else if(data.phase==='glcresolve' && data.glc){
+    if(data.glc.resolveStage==='duke'){
+      submitDukeChoice(data, 'skip');
+    } else if(data.glc.resolveStage==='archduke'){
+      submitArchdukeChoice(data, 'skip');
+    }
+  }
+}
+
+/* ================= 원정대 지명 + 마법 토큰 ================= */
 function proposeTeam(data){
   const need = data.missionSizes[data.quest-1];
   if(teamPickLocal.length !== need){
     alert(need+'명을 정확히 선택해주세요.');
     return;
   }
+  if(!magicPickLocal || !teamPickLocal.includes(magicPickLocal)){
+    alert('마법 토큰을 줄 원정대원을 선택해주세요.');
+    return;
+  }
   db.ref('rooms/'+myRoom).update({
-    phase:'vote',
+    phase:'quest',
     team: teamPickLocal,
-    votes: null
+    magicTarget: magicPickLocal,
+    questCards: null
   });
   teamPickLocal = [];
-}
-
-/* ================= 투표 ================= */
-function castVote(choice){
-  localVoteChoice = choice;
-  db.ref(`rooms/${myRoom}/votes/${myId}`).set(choice).then(()=>{
-    tryResolve('voteTally', ()=>resolveVotes());
-  });
-}
-
-function resolveVotes(){
-  const rr = db.ref('rooms/'+myRoom);
-  rr.once('value').then(snap=>{
-    const data = snap.val();
-    const ids = Object.keys(data.players);
-    const votes = data.votes || {};
-    if(Object.keys(votes).length < ids.length){
-      rr.child('locks/voteTally').set(null);
-      return;
-    }
-    const approve = ids.filter(id=>votes[id]==='approve').length;
-    const reject = ids.length - approve;
-    if(approve > reject){
-      rr.update({ phase:'quest', questCards:null, lastVote:{approve,reject} });
-    } else {
-      const newRejects = data.rejects + 1;
-      if(newRejects >= 5){
-        rr.update({ phase:'end', winner:'evil', winReason:'원정대 지명이 5번 연속 부결되었습니다.' });
-      } else {
-        const nextLeader = (data.leaderIndex + 1) % data.order.length;
-        rr.update({
-          phase:'team',
-          rejects:newRejects,
-          leaderIndex: nextLeader,
-          team:null, votes:null,
-          lastVote:{approve,reject}
-        });
-      }
-    }
-    rr.child('locks/voteTally').set(null);
-  });
+  magicPickLocal = null;
 }
 
 /* ================= 원정 수행 ================= */
+function allowedQuestActions(role, align, hasMagic){
+  if(role==='youth') return hasMagic ? ['fail'] : ['success'];
+  if(role==='morgan') return ['success','fail'];
+  if(align==='good') return ['success'];
+  return hasMagic ? ['success'] : ['success','fail'];
+}
 function submitQuestCard(card){
-  localQuestCard = card;
-  db.ref(`rooms/${myRoom}/questCards/${myId}`).set(card).then(()=>{
-    tryResolve('questTally', ()=>resolveQuest());
-  });
+  db.ref(`rooms/${myRoom}/questCards/${myId}`).set(card);
 }
 
-function resolveQuest(){
-  const rr = db.ref('rooms/'+myRoom);
-  rr.once('value').then(snap=>{
-    const data = snap.val();
-    const team = data.team;
-    const cards = data.questCards || {};
-    if(Object.keys(cards).length < team.length){
-      rr.child('locks/questTally').set(null);
-      return;
-    }
-    const fails = team.filter(id=>cards[id]==='fail').length;
-    const needFails = data.missionFails[data.quest-1];
-    const result = fails >= needFails ? 'fail' : 'success';
-    const newTrack = data.track.slice();
-    newTrack[data.quest-1] = result;
-
-    const successCount = newTrack.filter(t=>t==='success').length;
-    const failCount = newTrack.filter(t=>t==='fail').length;
-
-    let update = {
-      track:newTrack,
-      lastQuestFails: fails
-    };
-
-    if(failCount >= 3){
-      update.phase='end'; update.winner='evil';
-      update.winReason='원정 3회가 실패로 돌아갔습니다.';
-    } else if(successCount >= 3){
-      update.phase='assassin';
-    } else {
-      update.phase='team';
-      update.quest = data.quest+1;
-      update.leaderIndex = (data.leaderIndex+1) % data.order.length;
-      update.rejects = 0;
-      update.team=null; update.votes=null; update.questCards=null;
-    }
-    rr.update(update);
-    rr.child('locks/questTally').set(null);
+/* ================= 대장 교체 + 부적 ================= */
+function eligibleNextLeaders(data){
+  return data.order.filter(id=>
+    id!==data.currentLeaderId &&
+    !(data.leadersUsed||[]).includes(id) &&
+    !(data.amuletHolders||[]).includes(id) &&
+    !(data.fadedHolders||[]).includes(id)
+  );
+}
+function eligibleAmuletRecipients(data, nextLeaderId){
+  return data.order.filter(id=>
+    !(data.amuletHolders||[]).includes(id) &&
+    !(data.fadedHolders||[]).includes(id) &&
+    id!==nextLeaderId &&
+    id!==data.currentLeaderId &&
+    !(data.leadersUsed||[]).includes(id)
+  );
+}
+function submitHandover(data){
+  const needAmulet = (data.amuletCheckpoints||[]).includes(data.lastCompletedQuest);
+  if(!handoverLeaderPick){ alert('다음 원정대장을 선택해주세요.'); return; }
+  if(needAmulet && !handoverAmuletPick){ alert('부적 토큰을 줄 플레이어를 선택해주세요.'); return; }
+  const updates = {
+    leadersUsed: [...(data.leadersUsed||[]), data.currentLeaderId],
+    currentLeaderId: handoverLeaderPick,
+    phase: needAmulet ? 'amulet' : 'team'
+  };
+  if(needAmulet){
+    updates.amuletHolders = [...(data.amuletHolders||[]), handoverAmuletPick];
+    updates.pendingAmuletRecipient = handoverAmuletPick;
+  }
+  db.ref('rooms/'+myRoom).update(updates);
+  handoverLeaderPick = null; handoverAmuletPick = null;
+}
+function submitAmuletInvestigation(data){
+  if(!amuletTargetPick){ alert('조사할 대상을 선택해주세요.'); return; }
+  const targetId = amuletTargetPick;
+  const targetRole = data.players[targetId].role;
+  const result = targetRole==='troublemaker' ? 'evil' : data.players[targetId].align;
+  db.ref('rooms/'+myRoom).update({
+    fadedHolders: [...(data.fadedHolders||[]), targetId],
+    ['players/'+data.pendingAmuletRecipient+'/lastInvestigation']: {targetId, targetName:data.players[targetId].name, result},
+    pendingAmuletRecipient: null,
+    phase: 'team'
   });
+  amuletTargetPick = null;
 }
 
-/* ================= 어쌔신 ================= */
-function submitAssassinGuess(targetId){
-  const rr = db.ref('rooms/'+myRoom);
-  rr.child('assassin').set({guesserId:myId, targetId}).then(()=>{
-    tryResolve('assassinResolve', ()=>{
-      rr.once('value').then(snap=>{
-        const data = snap.val();
-        const targetRole = data.players[targetId].role;
-        const correct = targetRole === 'merlin';
-        rr.update({
-          phase:'end',
-          winner: correct ? 'evil':'good',
-          winReason: correct ? '어쌔신이 멀린을 정확히 지목했습니다.' : '어쌔신이 멀린을 지목하지 못했습니다.'
-        });
-      });
-    });
+/* ================= 선의 마지막 기회 ================= */
+function hunterDecide(choice){
+  if(choice==='hunt'){
+    db.ref('rooms/'+myRoom).update({phase:'hunt', ['glc/hunterDecision']:'hunt'});
+  } else {
+    db.ref(`rooms/${myRoom}/glc/hunterDecision`).set('skip');
+  }
+}
+function submitGlcPointing(data){
+  if(glcPickLocal.length !== 2){
+    alert('정확히 두 명을 지목해주세요.');
+    return;
+  }
+  db.ref(`rooms/${myRoom}/glc/pointing/${myId}`).set(glcPickLocal);
+  glcPickLocal = [];
+}
+
+/* ================= 사냥 (The Hunt) ================= */
+function goodRolesInPlay(data){
+  const s = new Set();
+  data.order.forEach(id=>{ if(data.players[id].align==='good') s.add(data.players[id].role); });
+  if(data.reserveRole) s.add(data.reserveRole);
+  return [...s];
+}
+function submitHunt(data){
+  if(huntPickLocal[0]===null || huntPickLocal[1]===null || !huntRolePickLocal[0] || !huntRolePickLocal[1]){
+    alert('두 명의 대상과 역할을 모두 선택해주세요.'); return;
+  }
+  if(huntPickLocal[0]===huntPickLocal[1]){
+    alert('서로 다른 두 대상을 선택해주세요.'); return;
+  }
+  if(huntRolePickLocal[0]!=='cleric' && huntRolePickLocal[1]!=='cleric'){
+    alert('두 대상 중 한 명은 반드시 "성직자"로 지목해야 합니다.'); return;
+  }
+  const picks = [
+    {target:huntPickLocal[0], role:huntRolePickLocal[0]},
+    {target:huntPickLocal[1], role:huntRolePickLocal[1]}
+  ];
+  const actualRoleOf = (t)=> t==='reserve' ? data.reserveRole : data.players[t].role;
+  const correct = picks.every(p=>{
+    const actual = actualRoleOf(p.target);
+    return p.role===actual || (p.role==='servant' && (actual==='duke'||actual==='archduke'));
   });
+  const winner = correct ? 'evil' : 'good';
+  const winReason = correct ? '눈먼 사냥꾼이 선의 정체를 정확히 맞혔습니다.' : '눈먼 사냥꾼이 선의 정체를 맞히지 못했습니다.';
+  db.ref('rooms/'+myRoom).update({ phase:'end', winner, winReason, huntPicks:picks });
 }
 
 /* ================= 재시작 ================= */
@@ -593,10 +855,12 @@ function playAgain(data){
     };
   });
   db.ref('rooms/'+myRoom).update({
-    phase:'lobby', order:null, leaderIndex:null, quest:null, track:null,
-    rejects:null, team:null, votes:null, questCards:null, huntUsed:null,
-    huntResult:null, assassin:null, winner:null, winReason:null,
-    missionSizes:null, missionFails:null, locks:null, lastVote:null, lastQuestFails:null,
+    phase:'lobby', order:null, firstLeaderId:null, currentLeaderId:null, leadersUsed:null,
+    quest:null, track:null, team:null, magicTarget:null, questCards:null,
+    amuletHolders:null, fadedHolders:null, pendingAmuletRecipient:null, reserveRole:null,
+    missionSizes:null, missionFails:null, amuletCheckpoints:null,
+    lastCompletedQuest:null, lastQuestFails:null, glc:null, huntPicks:null,
+    winner: null, winReason: null,
     players: playersReset
   });
 }
@@ -605,19 +869,23 @@ function playAgain(data){
    렌더링
    ========================================================= */
 function render(data){
-  const app = document.getElementById('app');
+  const app = document.getElementById('gameArea');
   if(!myRoom || !data){
     app.innerHTML = screenStart();
     bindStartScreen();
     return;
   }
+  autoResolveChecks(data);
   switch(data.phase){
     case 'lobby': app.innerHTML = screenLobby(data); bindLobby(data); break;
     case 'reveal': app.innerHTML = screenReveal(data); bindReveal(data); break;
     case 'team': app.innerHTML = screenTeam(data); bindTeam(data); break;
-    case 'vote': app.innerHTML = screenVote(data); bindVote(data); break;
     case 'quest': app.innerHTML = screenQuest(data); bindQuest(data); break;
-    case 'assassin': app.innerHTML = screenAssassin(data); bindAssassin(data); break;
+    case 'handover': app.innerHTML = screenHandover(data); bindHandover(data); break;
+    case 'amulet': app.innerHTML = screenAmulet(data); bindAmulet(data); break;
+    case 'goodslastchance': app.innerHTML = screenGLC(data); bindGLC(data); break;
+    case 'glcresolve': app.innerHTML = screenGLCResolve(data); bindGLCResolve(data); break;
+    case 'hunt': app.innerHTML = screenHunt(data); bindHunt(data); break;
     case 'end': app.innerHTML = screenEnd(data); bindEnd(data); break;
     default: app.innerHTML = '<div class="msg">로딩중...</div>';
   }
@@ -629,7 +897,7 @@ function screenStart(){
   <div class="crt-frame">
     <div class="title-block">
       <h1>퀘스트</h1>
-      <p>Q U E S T &nbsp;·&nbsp; O N L I N E</p>
+      <p>Q U E S T &nbsp;·&nbsp; O N L I N E &nbsp;·&nbsp; 감독판</p>
     </div>
     <div class="panel">
       <h2>이름 입력</h2>
@@ -668,6 +936,7 @@ function screenLobby(data){
   const isHost = data.hostId === myId;
   const n = ids.length;
   const canStart = n>=5 && n<=10;
+  const secondChoice = (data.settings && data.settings.secondGoodChoice) || 'youth';
   return `
   <div class="crt-frame">
     <div class="title-block">
@@ -692,7 +961,12 @@ function screenLobby(data){
     <div class="panel">
       <h2>방장 설정</h2>
       <div class="msg" style="padding:4px 0;">5~10명이 모이면 시작할 수 있어요.</div>
-      <button class="full" id="btnStart" ${canStart?'':'disabled'}>게임 시작</button>
+      <label>선 역할 구성 (6인 이상일 때 적용)</label>
+      <div class="row">
+        <button class="${secondChoice==='youth'?'good':'ghost'}" id="btnChoiceYouth">젊은 기사</button>
+        <button class="${secondChoice==='troublemaker'?'good':'ghost'}" id="btnChoiceTM">말썽꾼</button>
+      </div>
+      <button class="full" id="btnStart" ${canStart?'':'disabled'} style="margin-top:14px;">게임 시작</button>
     </div>` : `<div class="panel"><div class="msg">방장이 게임을 시작하길 기다리는 중...</div></div>`}
     <button class="full ghost" id="btnExit">방 나가기</button>
   </div>`;
@@ -700,31 +974,36 @@ function screenLobby(data){
 function bindLobby(data){
   const startBtn = document.getElementById('btnStart');
   if(startBtn) startBtn.onclick = ()=>startGame(data);
+  const y = document.getElementById('btnChoiceYouth');
+  const t = document.getElementById('btnChoiceTM');
+  if(y) y.onclick = ()=>toggleSecondGood('youth');
+  if(t) t.onclick = ()=>toggleSecondGood('troublemaker');
   document.getElementById('btnExit').onclick = exitRoom;
 }
 
-/* ---------- 밤: 정체 확인 ---------- */
+/* ---------- 정체 확인 ---------- */
 function screenReveal(data){
   const me = data.players[myId];
   const role = ROLE_INFO[me.role];
   const order = data.order;
   const players = data.players;
+  const n = order.length;
 
   let infoHtml = '';
-  if(me.role === 'merlin'){
-    const evilVisible = order.filter(id=> players[id].align==='evil' && players[id].role!=='mordred' && id!==myId);
-    infoHtml = `<div class="info-list"><b>당신이 아는 악의 정체:</b><br>${evilVisible.map(id=>esc(players[id].name)).join(', ') || '(없음)'}</div>`;
-  } else if(me.role === 'percival'){
-    const targets = order.filter(id=> (players[id].role==='merlin'||players[id].role==='morgana') );
-    const shown = shuffle(targets);
-    infoHtml = `<div class="info-list"><b>멀린 또는 모르가나로 보이는 인물:</b><br>${shown.map(id=>esc(players[id].name)).join(', ')}<br><span class="small">누가 진짜 멀린인지는 알 수 없습니다</span></div>`;
-  } else if(me.role==='morgana' || me.role==='mordred' || me.role==='minion' || me.role==='assassin'){
-    const fellowEvil = order.filter(id=> players[id].align==='evil' && players[id].role!=='oberon' && id!==myId && me.role!=='oberon');
-    infoHtml = `<div class="info-list"><b>당신의 동료(악):</b><br>${fellowEvil.map(id=>esc(players[id].name)).join(', ') || '(없음)'}</div>`;
-  } else if(me.role==='oberon'){
-    infoHtml = `<div class="info-list">당신은 동료를 알지 못하며, 동료들도 당신을 알아보지 못합니다.</div>`;
+  if(me.role === 'cleric'){
+    const leaderAlign = players[data.firstLeaderId].align;
+    infoHtml = `<div class="info-list"><b>첫 번째 원정대장 ${esc(players[data.firstLeaderId].name)}</b>님은<br>
+      <span class="align-pill ${leaderAlign}">${leaderAlign==='good'?'선(善)':'악(惡)'}</span> 진영입니다.</div>`;
+  } else if(me.role==='morgan' || me.role==='minion'){
+    let fellow = order.filter(id=> id!==myId && players[id].align==='evil' && players[id].role!=='hunter');
+    if(n===5){
+      fellow = [...fellow, ...order.filter(id=>players[id].role==='hunter')];
+    }
+    infoHtml = `<div class="info-list"><b>당신의 동료(악):</b><br>${fellow.map(id=>esc(players[id].name)).join(', ') || '(없음)'}</div>`;
+  } else if(me.role==='hunter'){
+    infoHtml = `<div class="info-list">눈먼 사냥꾼은 다른 악의 동료를 알지 못합니다. 홀로 정체를 숨기세요.</div>`;
   } else {
-    infoHtml = `<div class="info-list">추가 정보 없음. 대화와 원정 결과로 추리하세요.</div>`;
+    infoHtml = `<div class="info-list">추가 정보 없음. 대화와 원정 결과로 진실을 추리하세요.</div>`;
   }
 
   const readyCount = Object.values(data.players).filter(p=>p.ready).length;
@@ -741,11 +1020,14 @@ function screenReveal(data){
     </div>
     <button class="full" id="btnReady" ${me.ready?'disabled':''}>${me.ready?'확인 완료! 대기중...':'정체를 확인했습니다'}</button>
     <div class="msg">${readyCount} / ${total} 명 확인 완료</div>
+    ${data.hostId===myId ? `<button class="full ghost" id="btnForceAdvance" style="margin-top:16px;">⚠ 호스트: 응답 없는 인원 무시하고 강제 진행</button>` : ''}
   </div>`;
 }
 function bindReveal(data){
   const btn = document.getElementById('btnReady');
   if(btn && !data.players[myId].ready) btn.onclick = markReady;
+  const force = document.getElementById('btnForceAdvance');
+  if(force) force.onclick = ()=>forceAdvance(data);
 }
 
 /* ---------- 공통: 상단 진행판 ---------- */
@@ -753,7 +1035,7 @@ function headerBoard(data){
   const track = data.track;
   const sizes = data.missionSizes;
   const fails = data.missionFails;
-  const leaderName = esc(data.players[data.order[data.leaderIndex]].name);
+  const leaderName = esc(data.players[data.currentLeaderId].name);
   return `
   <div class="panel">
     <h2>원정 진행판 <span class="tag">${data.quest} / 5차</span></h2>
@@ -764,24 +1046,19 @@ function headerBoard(data){
           ${fails[i]===2?'<span class="need2">2실패</span>':''}
         </div>`).join('')}
     </div>
-    <div class="reject-track">
-      ${[0,1,2,3,4].map(i=>`<div class="r ${i<data.rejects?'used':''}"></div>`).join('')}
-      <span class="small" style="margin-left:6px;">부결 ${data.rejects}/5</span>
-    </div>
     <div class="msg" style="padding:6px 0 0;">현재 원정대장: <b style="color:var(--evil-red)">${leaderName}</b></div>
   </div>`;
 }
 
-/* ---------- 원정대 지명 ---------- */
+/* ---------- 원정대 지명 + 마법 토큰 ---------- */
 function screenTeam(data){
-  const isLeader = data.order[data.leaderIndex] === myId;
+  const isLeader = data.currentLeaderId === myId;
   const need = data.missionSizes[data.quest-1];
   const ids = data.order;
   return `
   <div class="crt-frame">
     <div class="title-block"><h1>원정대 지명</h1></div>
     ${headerBoard(data)}
-    ${data.lastVote ? `<div class="msg">직전 투표 결과: 찬성 ${data.lastVote.approve} · 반대 ${data.lastVote.reject}</div>`:''}
     ${isLeader ? `
     <div class="panel">
       <h2>${need}명을 선택하세요</h2>
@@ -792,16 +1069,34 @@ function screenTeam(data){
             <span>${esc(data.players[id].name)}</span>
           </li>`).join('')}
       </ul>
+    </div>
+    <div class="panel">
+      <h2>마법 토큰을 줄 대원</h2>
+      <div class="msg" style="padding:2px 0 8px;">마법 토큰을 받은 사람은 (특수 능력이 없다면) 반드시 성공을 내야 합니다.</div>
+      <ul class="player-list" id="magicPickList">
+        ${ids.map(id=>`<li class="checkbox-row magicRow" data-id="${id}" style="display:none;"><input type="radio" name="magicPick" data-id="${id}"><span>${esc(data.players[id].name)}</span></li>`).join('')}
+      </ul>
       <button class="full" id="btnProposeTeam">원정대 확정</button>
     </div>` : `
-    <div class="panel"><div class="msg">${esc(data.players[data.order[data.leaderIndex]].name)}님이 원정대를 고르는 중입니다...</div></div>`}
+    <div class="panel"><div class="msg">${esc(data.players[data.currentLeaderId].name)}님이 원정대를 고르는 중입니다...</div></div>`}
   </div>`;
 }
 function bindTeam(data){
-  const isLeader = data.order[data.leaderIndex] === myId;
+  const isLeader = data.currentLeaderId === myId;
   if(!isLeader) return;
   const need = data.missionSizes[data.quest-1];
   teamPickLocal = [];
+  magicPickLocal = null;
+  function refreshMagicList(){
+    document.querySelectorAll('.magicRow').forEach(row=>{
+      const id = row.dataset.id;
+      row.style.display = teamPickLocal.includes(id) ? 'flex':'none';
+      if(!teamPickLocal.includes(id)){
+        const radio = row.querySelector('input');
+        if(radio.checked){ radio.checked=false; if(magicPickLocal===id) magicPickLocal=null; }
+      }
+    });
+  }
   document.querySelectorAll('#teamPickList input[type=checkbox]').forEach(cb=>{
     cb.onchange = ()=>{
       const id = cb.dataset.id;
@@ -811,52 +1106,24 @@ function bindTeam(data){
       } else {
         teamPickLocal = teamPickLocal.filter(x=>x!==id);
       }
+      refreshMagicList();
     };
   });
+  document.querySelectorAll('input[name=magicPick]').forEach(r=>{
+    r.onchange = ()=>{ if(r.checked) magicPickLocal = r.dataset.id; };
+  });
   document.getElementById('btnProposeTeam').onclick = ()=>proposeTeam(data);
-}
-
-/* ---------- 투표 ---------- */
-function screenVote(data){
-  const team = data.team;
-  const already = data.votes && data.votes[myId];
-  const voteCount = data.votes? Object.keys(data.votes).length:0;
-  const total = data.order.length;
-  return `
-  <div class="crt-frame">
-    <div class="title-block"><h1>원정대 투표</h1></div>
-    ${headerBoard(data)}
-    <div class="panel">
-      <h2>제안된 원정대</h2>
-      <ul class="player-list">
-        ${team.map(id=>`<li>⚔ ${esc(data.players[id].name)}</li>`).join('')}
-      </ul>
-    </div>
-    <div class="panel">
-      <h2>당신의 선택</h2>
-      ${already ? `<div class="msg">투표 완료 (${already==='approve'?'찬성':'반대'}) · ${voteCount}/${total}명 투표함</div>` : `
-      <div class="row">
-        <button class="good" id="btnApprove">찬성</button>
-        <button class="evil" id="btnReject">반대</button>
-      </div>`}
-    </div>
-  </div>`;
-}
-function bindVote(data){
-  if(data.votes && data.votes[myId]) return;
-  const a = document.getElementById('btnApprove');
-  const r = document.getElementById('btnReject');
-  if(a) a.onclick = ()=>castVote('approve');
-  if(r) r.onclick = ()=>castVote('reject');
 }
 
 /* ---------- 원정 수행 ---------- */
 function screenQuest(data){
   const team = data.team;
   const onTeam = team.includes(myId);
-  const myAlign = data.players[myId].align;
+  const me = data.players[myId];
   const already = data.questCards && data.questCards[myId];
   const submitCount = data.questCards? Object.keys(data.questCards).length : 0;
+  const hasMagic = data.magicTarget === myId;
+  const allowed = onTeam ? allowedQuestActions(me.role, me.align, hasMagic) : [];
   return `
   <div class="crt-frame">
     <div class="title-block"><h1>원정 수행</h1></div>
@@ -864,66 +1131,360 @@ function screenQuest(data){
     <div class="panel">
       <h2>원정대</h2>
       <ul class="player-list">
-        ${team.map(id=>`<li>⚔ ${esc(data.players[id].name)} ${data.questCards && data.questCards[id]?'<span class="badge">제출완료</span>':''}</li>`).join('')}
+        ${team.map(id=>`<li>⚔ ${esc(data.players[id].name)} ${id===data.magicTarget?'<span class="badge">마법토큰</span>':''} ${data.questCards && data.questCards[id]?'<span class="badge">제출완료</span>':''}</li>`).join('')}
       </ul>
       <div class="msg">${submitCount}/${team.length}명 제출</div>
     </div>
     ${onTeam ? `
     <div class="panel">
       <h2>카드를 제출하세요</h2>
+      ${hasMagic ? `<div class="small center" style="margin-bottom:8px;">당신은 마법 토큰을 받았습니다.</div>`:''}
       ${already ? `<div class="msg">제출 완료. 결과를 기다리는 중...</div>` : `
       <div class="row">
-        <button class="good" id="btnSuccess">성공</button>
-        ${myAlign==='evil' ? `<button class="evil" id="btnFail">실패</button>` : ''}
+        ${allowed.includes('success') ? `<button class="good" id="btnSuccess">성공</button>`:''}
+        ${allowed.includes('fail') ? `<button class="evil" id="btnFail">실패</button>`:''}
       </div>
-      ${myAlign==='good' ? `<div class="small center" style="margin-top:6px;">선 진영은 반드시 성공만 낼 수 있습니다.</div>`:''}
       `}
     </div>` : `<div class="panel"><div class="msg">원정대가 아니므로 결과를 기다립니다.</div></div>`}
+    ${data.hostId===myId ? `<button class="full ghost" id="btnForceAdvance">⚠ 호스트: 응답 없는 인원 무시하고 강제 진행</button>` : ''}
   </div>`;
 }
 function bindQuest(data){
   const team = data.team;
-  if(!team.includes(myId)) return;
-  if(data.questCards && data.questCards[myId]) return;
-  const s = document.getElementById('btnSuccess');
-  const f = document.getElementById('btnFail');
-  if(s) s.onclick = ()=>submitQuestCard('success');
-  if(f) f.onclick = ()=>submitQuestCard('fail');
+  if(team.includes(myId) && !(data.questCards && data.questCards[myId])){
+    const s = document.getElementById('btnSuccess');
+    const f = document.getElementById('btnFail');
+    if(s) s.onclick = ()=>submitQuestCard('success');
+    if(f) f.onclick = ()=>submitQuestCard('fail');
+  }
+  const force = document.getElementById('btnForceAdvance');
+  if(force) force.onclick = ()=>forceAdvance(data);
 }
 
-/* ---------- 어쌔신 ---------- */
-function screenAssassin(data){
-  const myRole = data.players[myId].role;
-  const isAssassin = myRole === 'assassin';
-  const ids = data.order.filter(id=>data.players[id].align==='good');
+/* ---------- 대장 교체 + 부적 지급 ---------- */
+function screenHandover(data){
+  const isLeader = data.currentLeaderId === myId;
+  const needAmulet = (data.amuletCheckpoints||[]).includes(data.lastCompletedQuest);
+  const leaderCandidates = eligibleNextLeaders(data);
   return `
   <div class="crt-frame">
-    <div class="title-block"><h1>어쌔신의 최후의 기회</h1></div>
+    <div class="title-block"><h1>대장 교체</h1></div>
     ${headerBoard(data)}
+    <div class="msg">${data.lastCompletedQuest}차 원정 결과: <b>${data.track[data.lastCompletedQuest-1]==='success'?'성공':'실패'}</b> (실패 카드 ${data.lastQuestFails}장)</div>
+    ${isLeader ? `
     <div class="panel">
-      <h2>선의 원정 3회 성공!</h2>
-      <div class="msg">하지만 어쌔신이 멀린을 정확히 지목하면 악이 역전승합니다.</div>
-    </div>
-    ${isAssassin ? `
-    <div class="panel">
-      <h2>멀린으로 의심되는 사람을 지목하세요</h2>
-      <ul class="player-list">
-        ${ids.map(id=>`
-          <li>
+      <h2>다음 원정대장을 선택하세요</h2>
+      <ul class="player-list" id="nextLeaderList">
+        ${leaderCandidates.map(id=>`
+          <li class="checkbox-row" data-id="${id}">
+            <input type="radio" name="nextLeader" data-id="${id}">
             <span>${esc(data.players[id].name)}</span>
-            <button style="margin-left:auto;" data-id="${id}" class="assassinPick">지목</button>
           </li>`).join('')}
       </ul>
-    </div>` : `<div class="panel"><div class="msg">어쌔신이 멀린을 지목하는 중입니다...</div></div>`}
+    </div>
+    ${needAmulet ? `
+    <div class="panel">
+      <h2>부적 토큰을 줄 대상</h2>
+      <div class="msg" style="padding:2px 0 8px;">부적을 받은 사람은 다른 한 명의 소속을 몰래 확인할 수 있습니다.</div>
+      <ul class="player-list" id="amuletPickList"></ul>
+    </div>`:''}
+    <button class="full" id="btnConfirmHandover">확정</button>
+    ` : `<div class="panel"><div class="msg">${esc(data.players[data.currentLeaderId].name)}님이 다음 대장을 고르는 중입니다...</div></div>`}
   </div>`;
 }
-function bindAssassin(data){
-  document.querySelectorAll('.assassinPick').forEach(btn=>{
-    btn.onclick = ()=>{
-      if(!confirm(esc(data.players[btn.dataset.id].name)+' 님을 멀린으로 지목하시겠습니까? 되돌릴 수 없습니다.')) return;
-      submitAssassinGuess(btn.dataset.id);
+function bindHandover(data){
+  const isLeader = data.currentLeaderId === myId;
+  if(!isLeader) return;
+  handoverLeaderPick = null;
+  handoverAmuletPick = null;
+  const needAmulet = (data.amuletCheckpoints||[]).includes(data.lastCompletedQuest);
+  function refreshAmuletList(){
+    if(!needAmulet) return;
+    const list = document.getElementById('amuletPickList');
+    if(!list) return;
+    const candidates = eligibleAmuletRecipients(data, handoverLeaderPick);
+    list.innerHTML = candidates.map(id=>`
+      <li class="checkbox-row" data-id="${id}">
+        <input type="radio" name="amuletPick" data-id="${id}">
+        <span>${esc(data.players[id].name)}</span>
+      </li>`).join('') || '<li class="msg">선택 가능한 대상이 없습니다.</li>';
+    list.querySelectorAll('input[name=amuletPick]').forEach(r=>{
+      r.onchange = ()=>{ if(r.checked) handoverAmuletPick = r.dataset.id; };
+    });
+  }
+  document.querySelectorAll('input[name=nextLeader]').forEach(r=>{
+    r.onchange = ()=>{
+      if(r.checked){ handoverLeaderPick = r.dataset.id; handoverAmuletPick=null; refreshAmuletList(); }
     };
   });
+  document.getElementById('btnConfirmHandover').onclick = ()=>submitHandover(data);
+}
+
+/* ---------- 부적 조사 ---------- */
+function screenAmulet(data){
+  const isRecipient = data.pendingAmuletRecipient === myId;
+  const candidates = data.order.filter(id=>
+    id!==myId && !(data.amuletHolders||[]).includes(id) && !(data.fadedHolders||[]).includes(id)
+  );
+  return `
+  <div class="crt-frame">
+    <div class="title-block"><h1>부적 토큰</h1></div>
+    ${headerBoard(data)}
+    ${isRecipient ? `
+    <div class="panel">
+      <h2>조사할 대상을 선택하세요</h2>
+      <ul class="player-list" id="amuletTargetList">
+        ${candidates.map(id=>`
+          <li class="checkbox-row" data-id="${id}">
+            <input type="radio" name="amuletTarget" data-id="${id}">
+            <span>${esc(data.players[id].name)}</span>
+          </li>`).join('') || '<li class="msg">조사 가능한 대상이 없습니다.</li>'}
+      </ul>
+      <button class="full" id="btnConfirmAmulet">조사하기</button>
+    </div>` : `<div class="panel"><div class="msg">누군가 부적으로 소속을 조사하고 있습니다...</div></div>`}
+  </div>`;
+}
+function bindAmulet(data){
+  const isRecipient = data.pendingAmuletRecipient === myId;
+  if(!isRecipient) return;
+  amuletTargetPick = null;
+  document.querySelectorAll('input[name=amuletTarget]').forEach(r=>{
+    r.onchange = ()=>{ if(r.checked) amuletTargetPick = r.dataset.id; };
+  });
+  const btn = document.getElementById('btnConfirmAmulet');
+  if(btn) btn.onclick = ()=>submitAmuletInvestigation(data);
+}
+
+/* ---------- 선의 마지막 기회 ---------- */
+function screenGLC(data){
+  const glc = data.glc || {};
+  const myRole = data.players[myId].role;
+  if(!glc.hunterDecision){
+    if(myRole==='hunter'){
+      return `
+      <div class="crt-frame">
+        <div class="title-block"><h1>선의 마지막 기회</h1></div>
+        ${headerBoard(data)}
+        <div class="panel">
+          <h2>세 번째 성공이 불가능해졌습니다</h2>
+          <div class="msg">당신은 눈먼 사냥꾼입니다. 사냥을 시작하시겠습니까?</div>
+          <div class="row" style="margin-top:10px;">
+            <button class="evil" id="btnHunt">사냥 시작</button>
+            <button class="ghost" id="btnSkipHunt">포기하고 진행</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    return `
+    <div class="crt-frame">
+      <div class="title-block"><h1>선의 마지막 기회</h1></div>
+      ${headerBoard(data)}
+      <div class="panel"><div class="msg">눈먼 사냥꾼이 사냥 여부를 결정하는 중입니다...</div></div>
+    </div>`;
+  }
+  // hunterDecision === 'skip' → 지목 단계
+  const already = glc.pointing && glc.pointing[myId];
+  const submitCount = glc.pointing ? Object.keys(glc.pointing).length : 0;
+  const total = data.order.length;
+  return `
+  <div class="crt-frame">
+    <div class="title-block"><h1>선의 마지막 기회</h1></div>
+    ${headerBoard(data)}
+    <div class="panel">
+      <h2>악으로 의심되는 두 명을 지목하세요</h2>
+      <div class="msg" style="padding:2px 0 8px;">전원 동시에 두 명씩 지목합니다. ${submitCount}/${total}명 완료</div>
+      ${already ? `<div class="msg">지목 완료. 결과를 기다리는 중...</div>` : `
+      <ul class="player-list" id="glcPickList">
+        ${data.order.map(id=>`
+          <li class="checkbox-row" data-id="${id}">
+            <input type="checkbox" data-id="${id}">
+            <span>${esc(data.players[id].name)}</span>
+          </li>`).join('')}
+      </ul>
+      <button class="full" id="btnSubmitGlc">지목 확정</button>`}
+    </div>
+  </div>`;
+}
+function bindGLC(data){
+  const glc = data.glc || {};
+  const myRole = data.players[myId].role;
+  if(!glc.hunterDecision){
+    if(myRole==='hunter'){
+      const h = document.getElementById('btnHunt');
+      const sk = document.getElementById('btnSkipHunt');
+      if(h) h.onclick = ()=>hunterDecide('hunt');
+      if(sk) sk.onclick = ()=>hunterDecide('skip');
+    }
+    return;
+  }
+  if(glc.pointing && glc.pointing[myId]) return;
+  glcPickLocal = [];
+  document.querySelectorAll('#glcPickList input[type=checkbox]').forEach(cb=>{
+    cb.onchange = ()=>{
+      const id = cb.dataset.id;
+      if(cb.checked){
+        if(glcPickLocal.length>=2){ cb.checked=false; return; }
+        glcPickLocal.push(id);
+      } else {
+        glcPickLocal = glcPickLocal.filter(x=>x!==id);
+      }
+    };
+  });
+  const btn = document.getElementById('btnSubmitGlc');
+  if(btn) btn.onclick = ()=>submitGlcPointing(data);
+}
+
+/* ---------- 공작 / 대공: 지목 보정 화면 ---------- */
+function screenGLCResolve(data){
+  const glc = data.glc || {};
+  const isDukeTurn = glc.resolveStage === 'duke';
+  const isActor = isDukeTurn ? (myId===glc.dukeId) : (myId===glc.archdukeId);
+  const roleName = isDukeTurn ? '공작' : '대공';
+  if(!isActor){
+    return `
+    <div class="crt-frame">
+      <div class="title-block"><h1>선의 마지막 기회</h1></div>
+      ${headerBoard(data)}
+      <div class="panel"><div class="msg">${roleName}이(가) 능력을 사용하는 중입니다...</div></div>
+    </div>`;
+  }
+  const pointing = isDukeTurn ? (glc.pointing||{}) : pointingAfterDuke(data);
+  const wrongs = wrongPicksList(data, pointing);
+  if(isDukeTurn){
+    return `
+    <div class="crt-frame">
+      <div class="title-block"><h1>공작의 능력</h1></div>
+      ${headerBoard(data)}
+      <div class="panel">
+        <h2>무효화할 지목을 선택하세요</h2>
+        <div class="msg" style="padding:2px 0 8px;">악이 아닌 사람을 가리킨 잘못된 지목 중 하나를 없앨 수 있습니다.</div>
+        <ul class="player-list" id="dukePickList">
+          ${wrongs.map(w=>`
+            <li class="checkbox-row" data-key="${w.pointerId}|${w.targetId}">
+              <input type="radio" name="dukePick" data-key="${w.pointerId}|${w.targetId}">
+              <span>${esc(data.players[w.pointerId].name)} → ${esc(data.players[w.targetId].name)}</span>
+            </li>`).join('')}
+          <li class="checkbox-row" data-key="skip">
+            <input type="radio" name="dukePick" data-key="skip">
+            <span>능력을 사용하지 않는다</span>
+          </li>
+        </ul>
+        <button class="full" id="btnConfirmDuke">확정</button>
+      </div>
+    </div>`;
+  }
+  const coveredEvil = new Set(
+    data.order.filter(id=>data.players[id].align==='good')
+      .flatMap(id=> pointing[id]||[])
+      .filter(id=>data.players[id].align==='evil')
+  );
+  const evilOptions = data.order.filter(id=>data.players[id].align==='evil' && !coveredEvil.has(id));
+  return `
+  <div class="crt-frame">
+    <div class="title-block"><h1>대공의 능력</h1></div>
+    ${headerBoard(data)}
+    <div class="panel">
+      <h2>재지정할 지목을 선택하세요</h2>
+      <div class="msg" style="padding:2px 0 8px;">악이 아닌 사람을 가리킨 잘못된 지목 중 하나를 골라, 아직 아무도 지목하지 않은 악 진영 사람으로 바꿀 수 있습니다.</div>
+      <ul class="player-list" id="archdukePickList">
+        ${wrongs.map(w=>`
+          <li class="checkbox-row" data-key="${w.pointerId}|${w.targetId}">
+            <input type="radio" name="archdukePick" data-key="${w.pointerId}|${w.targetId}">
+            <span>${esc(data.players[w.pointerId].name)} → ${esc(data.players[w.targetId].name)}</span>
+          </li>`).join('') || '<li class="msg">남은 잘못된 지목이 없습니다.</li>'}
+        <li class="checkbox-row" data-key="skip">
+          <input type="radio" name="archdukePick" data-key="skip">
+          <span>능력을 사용하지 않는다</span>
+        </li>
+      </ul>
+      <label>바꿔 지목할 대상 (아직 아무도 지목하지 않은 악 진영만 선택 가능)</label>
+      <select id="archdukeNewTarget" style="width:100%; padding:8px;" ${evilOptions.length===0?'disabled':''}>
+        <option value="">-- 대상 선택 --</option>
+        ${evilOptions.map(id=>`<option value="${id}">${esc(data.players[id].name)}</option>`).join('')}
+      </select>
+      ${evilOptions.length===0 ? '<div class="msg" style="padding:6px 0 0;">아직 아무도 지목하지 않은 악이 없어, 이번엔 능력을 사용할 수 없습니다.</div>' : ''}
+      <button class="full" id="btnConfirmArchduke">확정</button>
+    </div>
+  </div>`;
+}
+function bindGLCResolve(data){
+  const glc = data.glc || {};
+  const isDukeTurn = glc.resolveStage === 'duke';
+  const isActor = isDukeTurn ? (myId===glc.dukeId) : (myId===glc.archdukeId);
+  if(!isActor) return;
+  if(isDukeTurn){
+    let pick = null;
+    document.querySelectorAll('#dukePickList input[type=radio]').forEach(r=>{
+      r.onchange = ()=>{ if(r.checked) pick = r.dataset.key; };
+    });
+    const btn = document.getElementById('btnConfirmDuke');
+    if(btn) btn.onclick = ()=>{
+      if(!pick){ alert('선택지를 골라주세요.'); return; }
+      const choice = pick==='skip' ? 'skip' : (()=>{
+        const [pointerId, targetId] = pick.split('|');
+        return {pointerId, targetId};
+      })();
+      submitDukeChoice(data, choice);
+    };
+  } else {
+    let pick = null;
+    document.querySelectorAll('#archdukePickList input[type=radio]').forEach(r=>{
+      r.onchange = ()=>{ if(r.checked) pick = r.dataset.key; };
+    });
+    const btn = document.getElementById('btnConfirmArchduke');
+    if(btn) btn.onclick = ()=>{
+      if(!pick){ alert('선택지를 골라주세요.'); return; }
+      if(pick==='skip'){ submitArchdukeChoice(data, 'skip'); return; }
+      const sel = document.getElementById('archdukeNewTarget').value;
+      if(!sel){ alert('바꿔 지목할 대상을 선택해주세요.'); return; }
+      const [pointerId, targetId] = pick.split('|');
+      submitArchdukeChoice(data, {pointerId, targetId, newTargetId: sel});
+    };
+  }
+}
+
+/* ---------- 사냥 (The Hunt) ---------- */
+function screenHunt(data){
+  const isHunter = data.players[myId].role === 'hunter';
+  const roles = goodRolesInPlay(data);
+  const targets = data.order.map(id=>({id, name:data.players[id].name}));
+  if(data.reserveRole) targets.push({id:'reserve', name:'(사용되지 않은 예비 카드)'});
+  return `
+  <div class="crt-frame">
+    <div class="title-block"><h1>사냥 (The Hunt)</h1></div>
+    ${headerBoard(data)}
+    ${isHunter ? `
+    <div class="panel">
+      <h2>선 역할 2명을 지목하세요</h2>
+      <div class="msg" style="padding:2px 0 8px;">반드시 한 명은 "성직자"로 지목해야 합니다. 성직자를 포함해 두 명 모두 정확히 맞히면 악의 승리입니다.</div>
+      ${[0,1].map(i=>`
+        <label>대상 ${i+1}</label>
+        <select id="huntTarget${i}" style="width:100%; padding:8px; margin-bottom:6px;">
+          <option value="">-- 대상 선택 --</option>
+          ${targets.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}
+        </select>
+        <select id="huntRole${i}" style="width:100%; padding:8px; margin-bottom:12px;">
+          <option value="">-- 역할 선택 --</option>
+          ${roles.map(r=>`<option value="${r}">${ROLE_INFO[r].name}</option>`).join('')}
+        </select>
+      `).join('')}
+      <button class="full evil" id="btnSubmitHunt">사냥 확정 (되돌릴 수 없습니다)</button>
+    </div>` : `<div class="panel"><div class="msg">눈먼 사냥꾼이 사냥하는 중입니다...</div></div>`}
+  </div>`;
+}
+function bindHunt(data){
+  const isHunter = data.players[myId].role === 'hunter';
+  if(!isHunter) return;
+  huntPickLocal = [null,null];
+  huntRolePickLocal = [null,null];
+  [0,1].forEach(i=>{
+    document.getElementById('huntTarget'+i).onchange = (e)=>{ huntPickLocal[i] = e.target.value || null; };
+    document.getElementById('huntRole'+i).onchange = (e)=>{ huntRolePickLocal[i] = e.target.value || null; };
+  });
+  document.getElementById('btnSubmitHunt').onclick = ()=>{
+    if(!confirm('사냥 결과는 되돌릴 수 없습니다. 확정하시겠습니까?')) return;
+    submitHunt(data);
+  };
 }
 
 /* ---------- 종료 ---------- */
@@ -948,6 +1509,7 @@ function screenEnd(data){
           <span><span class="align-pill ${p.align}">${r.name}</span></span>
         </div>`;
       }).join('')}
+      ${data.reserveRole ? `<div class="reveal-item"><span>(예비 카드)</span><span><span class="align-pill good">${ROLE_INFO[data.reserveRole].name}</span></span></div>`:''}
     </div>
     ${isHost ? `<button class="full" id="btnAgain">같은 인원으로 다시 시작</button>`:''}
     <button class="full ghost" id="btnExit2">방 나가기</button>
